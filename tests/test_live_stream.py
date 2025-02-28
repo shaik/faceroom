@@ -83,4 +83,4 @@ def test_dashboard_with_video(client):
     assert response.status_code == 200
     assert b'Live Camera Feed' in response.data
     assert b'video-feed' in response.data
-    assert b'url_for(\'live_feed\')' in response.data
+    assert b'src="/live"' in response.data

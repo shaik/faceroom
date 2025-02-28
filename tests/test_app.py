@@ -26,10 +26,13 @@ def test_dashboard_route(client):
     content = response.data.decode()
     assert 'Faceroom Dashboard' in content
     assert 'Welcome to Faceroom' in content
-    assert 'Status: Under Construction' in content
     
-    # Check expected feature list
-    assert 'Live camera feed' in content
+    # Check live feed
+    assert 'Live Camera Feed' in content
+    assert 'src="/live"' in content
+    
+    # Check expected features
+    assert 'Real-time face detection' in content
     assert 'Face recognition configuration' in content
     assert 'User enrollment' in content
     assert 'System statistics' in content
