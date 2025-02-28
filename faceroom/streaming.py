@@ -1,0 +1,91 @@
+"""Video streaming module for faceroom.
+
+This module provides functionality to stream live video with face detection
+overlays using MJPEG format. It integrates with the live overlay module
+to provide real-time face detection visualization.
+"""
+
+import logging
+import time
+from typing import Generator, Optional
+import cv2
+import numpy as np
+from faceroom.live_overlay import process_frame_and_overlay
+from faceroom.camera import cleanup as cleanup_cameras
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Track active streams
+_active_streams = set()
+
+def generate_frames(
+    device_id: int = 0,
+    jpeg_quality: int = 90,
+    frame_interval: float = 0.033  # ~30 FPS
+) -> Generator[bytes, None, None]:
+    """Generate a sequence of JPEG frames for MJPEG streaming.
+    
+    This generator continuously captures frames using @func:process_frame_and_overlay,
+    converts them to JPEG format, and yields them in the MJPEG format.
+    
+    Args:
+        device_id (int): Camera device ID (default: 0)
+        jpeg_quality (int): JPEG compression quality, 0-100 (default: 90)
+        frame_interval (float): Minimum time between frames in seconds (default: 0.033)
+    
+    Yields:
+        bytes: JPEG frame data in MJPEG format
+    """
+    stream_id = id(time.time())
+    _active_streams.add(stream_id)
+    
+    try:
+        while stream_id in _active_streams:
+            try:
+                start_time = time.time()
+                
+                # Capture and process frame
+                frame = process_frame_and_overlay(device_id)
+                if frame is None:
+                    logger.warning("Failed to capture frame, skipping...")
+                    time.sleep(frame_interval)
+                    continue
+                
+                # Encode frame as JPEG
+                success, jpeg_data = cv2.imencode(
+                    '.jpg',
+                    frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
+                )
+                
+                if not success:
+                    logger.error("Failed to encode frame as JPEG")
+                    continue
+                
+                # Format as MJPEG frame
+                yield b'--frame\r\n' \
+                      b'Content-Type: image/jpeg\r\n\r\n' + \
+                      jpeg_data.tobytes() + \
+                      b'\r\n'
+                
+                # Maintain frame rate
+                elapsed = time.time() - start_time
+                if elapsed < frame_interval:
+                    time.sleep(frame_interval - elapsed)
+                    
+            except Exception as e:
+                logger.error(f"Error in frame generation: {str(e)}")
+                time.sleep(frame_interval)  # Avoid rapid error loops
+    finally:
+        _active_streams.remove(stream_id)
+        if not _active_streams:
+            cleanup_cameras()
+
+def cleanup():
+    """Stop all active streams and cleanup resources.
+    
+    This should be called when shutting down the application.
+    """
+    _active_streams.clear()
+    cleanup_cameras()

@@ -1,13 +1,14 @@
 """Web application module for faceroom.
 
-This module provides a Flask-based web interface for the faceroom application.
-It currently implements a basic dashboard that will be extended with configuration
-and monitoring capabilities in future iterations.
+This module provides a Flask-based web interface for the faceroom application,
+including a dashboard and live video streaming capabilities.
 """
 
 import logging
-from typing import Tuple
-from flask import Flask, render_template_string
+import atexit
+from typing import Tuple, Any, Union
+from flask import Flask, Response, render_template_string, request
+from faceroom.streaming import generate_frames, cleanup as cleanup_streaming
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -40,16 +41,30 @@ DASHBOARD_TEMPLATE = """
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
         }
+        .video-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .video-feed {
+            max-width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Faceroom Dashboard</h1>
         <p>Welcome to Faceroom - Real-time Face Recognition System</p>
-        <p>Status: Under Construction</p>
-        <p>Features coming soon:</p>
+        
+        <div class="video-container">
+            <h2>Live Camera Feed</h2>
+            <img src="{{ url_for('live_feed') }}" alt="Live Camera Feed" class="video-feed">
+        </div>
+        
+        <h2>Features</h2>
         <ul>
-            <li>Live camera feed</li>
+            <li>Real-time face detection</li>
             <li>Face recognition configuration</li>
             <li>User enrollment</li>
             <li>System statistics</li>
@@ -61,10 +76,7 @@ DASHBOARD_TEMPLATE = """
 
 @app.route('/dashboard')
 def dashboard() -> Tuple[str, int]:
-    """Render the dashboard page.
-    
-    This route provides a simple placeholder dashboard that will be enhanced
-    with additional functionality in future iterations.
+    """Render the dashboard page with live video feed.
     
     Returns:
         Tuple[str, int]: A tuple containing:
@@ -77,6 +89,36 @@ def dashboard() -> Tuple[str, int]:
         logger.error(f"Error rendering dashboard: {str(e)}")
         return "Internal Server Error", 500
 
+@app.route('/live')
+def live_feed() -> Union[Response, Tuple[str, int]]:
+    """Stream live video with face detection overlays.
+    
+    This route provides an MJPEG stream of the camera feed with real-time
+    face detection overlays using @func:generate_frames.
+    
+    Query Parameters:
+        camera (int): Optional camera device ID (default: 0)
+    
+    Returns:
+        Union[Response, Tuple[str, int]]: Flask response object containing the MJPEG stream,
+            or an error tuple (message, status_code)
+    """
+    try:
+        # Get camera ID from query parameter, default to 0
+        try:
+            camera_id = int(request.args.get('camera', 0))
+        except (TypeError, ValueError) as e:
+            logger.error(f"Invalid camera ID: {str(e)}")
+            return "Invalid camera ID", 400
+            
+        return Response(
+            generate_frames(device_id=camera_id),
+            content_type='multipart/x-mixed-replace; boundary=frame'
+        )
+    except Exception as e:
+        logger.error(f"Error setting up video stream: {str(e)}")
+        return "Video stream unavailable", 500
+
 @app.route('/')
 def index() -> Tuple[str, int]:
     """Redirect root URL to dashboard.
@@ -88,6 +130,9 @@ def index() -> Tuple[str, int]:
     """
     return '<meta http-equiv="refresh" content="0; url=/dashboard">', 200
 
+# Register cleanup handler
+atexit.register(cleanup_streaming)
+
 if __name__ == '__main__':
     # Configure logging when running directly
     logging.basicConfig(
@@ -96,4 +141,4 @@ if __name__ == '__main__':
     )
     
     # Run the Flask application in debug mode
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=True, host='127.0.0.1', port=5000, threaded=True)
