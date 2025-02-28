@@ -14,6 +14,7 @@ from typing import Dict, Optional, Tuple, List, Any
 from threading import RLock
 
 from faceroom.face_recognition_module import detect_faces
+from faceroom.analytics import increment_metric
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -110,6 +111,7 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         # Check if any faces were detected
         if not face_locations:
             logger.warning(f"No faces detected for user_id: {user_id}")
+            increment_metric("enrollment_errors")
             return False
         
         # Use the first face for simplicity
@@ -120,11 +122,13 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         quality_passed, reason = _check_face_quality(image, face_location)
         if not quality_passed:
             logger.warning(f"Face quality check failed for user_id {user_id}: {reason}")
+            increment_metric("enrollment_errors")
             return False
         
         # Get the corresponding encoding
         if not face_encodings:
             logger.warning(f"No face encodings generated for user_id: {user_id}")
+            increment_metric("enrollment_errors")
             return False
             
         face_encoding = face_encodings[0]
@@ -133,6 +137,7 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         with _db_lock:
             _enrolled_faces[user_id] = face_encoding
             logger.info(f"Successfully enrolled face for user_id: {user_id}")
+            increment_metric("enrollment_count")
         
         # Save to persistent storage
         save_enrollment_database()
@@ -141,6 +146,7 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         
     except Exception as e:
         logger.error(f"Error enrolling face for user_id {user_id}: {str(e)}")
+        increment_metric("enrollment_errors")
         return False
 
 
@@ -179,10 +185,13 @@ def remove_enrolled_face(user_id: str) -> bool:
     with _db_lock:
         if user_id in _enrolled_faces:
             del _enrolled_faces[user_id]
-            logger.info(f"Removed enrolled face for user_id: {user_id}")
+            logger.info(f"Removed face for user_id: {user_id}")
+            increment_metric("enrollment_count", -1)  # Decrement enrollment count
             save_enrollment_database()
             return True
-        return False
+        else:
+            logger.warning(f"Attempted to remove non-existent user_id: {user_id}")
+            return False
 
 
 def _encode_array(arr: np.ndarray) -> str:

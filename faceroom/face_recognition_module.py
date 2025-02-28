@@ -9,6 +9,8 @@ import logging
 from typing import List, Tuple, Optional
 import numpy as np
 import face_recognition
+from faceroom.config import get_recognition_threshold
+from faceroom.analytics import increment_metric
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -79,25 +81,35 @@ def detect_faces(
 def compare_faces(
     known_encoding: np.ndarray,
     face_encodings: List[np.ndarray],
-    tolerance: float = 0.6
+    tolerance: float = None
 ) -> List[bool]:
     """Compare a known face encoding against a list of face encodings.
     
     Args:
         known_encoding (np.ndarray): The known face encoding to compare against
         face_encodings (List[np.ndarray]): List of face encodings to check
-        tolerance (float): How much distance between faces to consider it a match.
-                         Lower is more strict. Default: 0.6
+        tolerance (float, optional): How much distance between faces to consider it a match.
+                          Lower is more strict. If None, uses the global configuration.
     
     Returns:
         List[bool]: List of True/False values indicating which encodings match
     """
+    # Use the configured threshold if no tolerance is provided
+    if tolerance is None:
+        tolerance = get_recognition_threshold()
+        
     try:
-        return face_recognition.compare_faces(
+        matches = face_recognition.compare_faces(
             [known_encoding],
             face_encodings,
             tolerance=tolerance
         )
+        
+        # Track recognition matches
+        if matches and any(matches):
+            increment_metric("recognition_matches", sum(1 for match in matches if match))
+            
+        return matches
     except Exception as e:
         logger.error(f"Error comparing face encodings: {str(e)}")
         return [False] * len(face_encodings)

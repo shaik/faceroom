@@ -16,6 +16,8 @@ from faceroom.enrollment import (
     enroll_face, get_face_encoding, list_enrolled_users,
     remove_enrolled_face, save_enrollment_database, load_enrollment_database
 )
+from faceroom.config import get_recognition_threshold, set_recognition_threshold, get_config_summary
+from faceroom.analytics import get_metrics, get_metrics_summary
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ DASHBOARD_TEMPLATE = """
             border: 2px solid #ddd;
             border-radius: 5px;
         }
-        .enrollment-container {
+        .enrollment-container, .config-container, .analytics-container {
             margin: 20px 0;
             padding: 15px;
             border: 1px solid #eee;
@@ -91,6 +93,55 @@ DASHBOARD_TEMPLATE = """
             display: flex;
             justify-content: space-between;
         }
+        .slider-container {
+            margin: 15px 0;
+        }
+        .slider {
+            width: 100%;
+        }
+        .slider-value {
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .metric-card {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 10px 0;
+        }
+        .metric-label {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        .refresh-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .last-updated {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+            text-align: right;
+        }
     </style>
     <script>
         // Function to enroll a face using the current camera frame
@@ -116,6 +167,7 @@ DASHBOARD_TEMPLATE = """
                 if (data.success) {
                     alert('Face enrolled successfully!');
                     loadEnrolledUsers();
+                    loadAnalytics(); // Refresh analytics after enrollment
                 } else {
                     alert('Failed to enroll face: ' + data.error);
                 }
@@ -178,6 +230,7 @@ DASHBOARD_TEMPLATE = """
                     if (data.success) {
                         alert('User removed successfully!');
                         loadEnrolledUsers();
+                        loadAnalytics(); // Refresh analytics after removal
                     } else {
                         alert('Failed to remove user: ' + data.error);
                     }
@@ -189,9 +242,99 @@ DASHBOARD_TEMPLATE = """
             }
         }
         
-        // Load enrolled users when the page loads
+        // Function to update the recognition threshold
+        function updateThreshold() {
+            const thresholdValue = parseFloat(document.getElementById('threshold-slider').value);
+            document.getElementById('threshold-value').textContent = thresholdValue.toFixed(2);
+            
+            fetch('/set-threshold', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    threshold: thresholdValue
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Threshold updated successfully to', data.threshold);
+                } else {
+                    alert('Failed to update threshold: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating threshold');
+            });
+        }
+        
+        // Function to load analytics data
+        function loadAnalytics() {
+            fetch('/analytics')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const metrics = data.metrics;
+                    updateMetricDisplay('frames-processed', metrics.frames_processed);
+                    updateMetricDisplay('faces-detected', metrics.faces_detected);
+                    updateMetricDisplay('recognition-matches', metrics.recognition_matches);
+                    updateMetricDisplay('detection-errors', metrics.detection_errors);
+                    updateMetricDisplay('enrollment-count', metrics.enrollment_count);
+                    updateMetricDisplay('faces-per-frame', metrics.faces_per_frame);
+                    
+                    // Update last updated time
+                    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+                } else {
+                    console.error('Failed to load analytics:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading analytics:', error);
+            });
+        }
+        
+        // Helper function to update a metric display
+        function updateMetricDisplay(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                if (typeof value === 'number' && !Number.isInteger(value)) {
+                    // Format floating point numbers to 4 decimal places
+                    element.textContent = value.toFixed(4);
+                } else {
+                    element.textContent = value;
+                }
+            }
+        }
+        
+        // Set up periodic analytics refresh
+        function setupAnalyticsRefresh() {
+            // Initial load
+            loadAnalytics();
+            
+            // Refresh every 5 seconds
+            setInterval(loadAnalytics, 5000);
+        }
+        
+        // Load enrolled users and configuration when the page loads
         window.onload = function() {
             loadEnrolledUsers();
+            setupAnalyticsRefresh();
+            
+            // Load current threshold value
+            fetch('/config')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const threshold = data.config.recognition_threshold;
+                    document.getElementById('threshold-slider').value = threshold;
+                    document.getElementById('threshold-value').textContent = threshold.toFixed(2);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading configuration:', error);
+            });
         };
     </script>
 </head>
@@ -203,6 +346,57 @@ DASHBOARD_TEMPLATE = """
         <div class="video-container">
             <h2>Live Camera Feed</h2>
             <img src="/live" alt="Live Camera Feed" class="video-feed">
+        </div>
+        
+        <div class="analytics-container">
+            <h2>System Analytics <button class="refresh-button" onclick="loadAnalytics()">Refresh</button></h2>
+            <p>Real-time metrics about system performance and usage.</p>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Frames Processed</div>
+                    <div id="frames-processed" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Faces Detected</div>
+                    <div id="faces-detected" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Recognition Matches</div>
+                    <div id="recognition-matches" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Detection Errors</div>
+                    <div id="detection-errors" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Enrolled Users</div>
+                    <div id="enrollment-count" class="metric-value">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Faces Per Frame</div>
+                    <div id="faces-per-frame" class="metric-value">0</div>
+                </div>
+            </div>
+            
+            <div class="last-updated">
+                Last updated: <span id="last-updated">-</span>
+            </div>
+        </div>
+        
+        <div class="config-container">
+            <h2>Recognition Settings</h2>
+            <p>Adjust the recognition threshold to control how strictly faces are matched.</p>
+            <p>Lower values (0.1) are more strict with fewer false positives, while higher values (1.0) are more lenient.</p>
+            
+            <div class="slider-container">
+                <label for="threshold-slider">Recognition Threshold:</label>
+                <input type="range" id="threshold-slider" class="slider" 
+                       min="0.1" max="1.0" step="0.05" value="{{ threshold }}"
+                       oninput="document.getElementById('threshold-value').textContent = parseFloat(this.value).toFixed(2);"
+                       onchange="updateThreshold()">
+                <span id="threshold-value" class="slider-value">{{ threshold }}</span>
+            </div>
         </div>
         
         <div class="enrollment-container">
@@ -229,7 +423,7 @@ DASHBOARD_TEMPLATE = """
             <li>Real-time face detection</li>
             <li>Face recognition configuration</li>
             <li>User enrollment</li>
-            <li>System statistics</li>
+            <li>System analytics</li>
         </ul>
     </div>
 </body>
@@ -246,7 +440,9 @@ def dashboard() -> Tuple[str, int]:
             - HTTP status code (200 for success)
     """
     try:
-        return render_template_string(DASHBOARD_TEMPLATE), 200
+        # Get current threshold for the template
+        threshold = get_recognition_threshold()
+        return render_template_string(DASHBOARD_TEMPLATE, threshold=threshold), 200
     except Exception as e:
         logger.error(f"Error rendering dashboard: {str(e)}")
         return "Internal Server Error", 500
@@ -268,7 +464,14 @@ def live_feed() -> Union[Response, Tuple[str, int]]:
     """
     try:
         # Get camera ID from query parameters
-        camera_id = request.args.get('camera', default=0, type=int)
+        camera_param = request.args.get('camera', default='0')
+        
+        # Validate camera ID is a valid integer
+        try:
+            camera_id = int(camera_param)
+        except ValueError:
+            logger.error(f"Invalid camera ID provided: {camera_param}")
+            return "Invalid camera ID", 400
         
         # Create a streaming response
         return Response(
@@ -391,6 +594,70 @@ def remove_user() -> Tuple[Response, int]:
         logger.error(f"Error removing user: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/set-threshold', methods=['POST'])
+def set_threshold() -> Tuple[Response, int]:
+    """Set the face recognition threshold.
+    
+    This endpoint accepts a POST request with JSON data containing:
+    - threshold: The new threshold value (between 0.1 and 1.0)
+    
+    Returns:
+        Tuple[Response, int]: A tuple containing:
+            - JSON response with success/error information
+            - HTTP status code
+    """
+    try:
+        # Parse request data
+        data = request.json
+        if not data or 'threshold' not in data:
+            return jsonify({'success': False, 'error': 'No threshold provided'}), 400
+        
+        # Parse and validate the threshold
+        try:
+            new_threshold = float(data['threshold'])
+            set_recognition_threshold(new_threshold)
+            return jsonify({'success': True, 'threshold': get_recognition_threshold()}), 200
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+            
+    except Exception as e:
+        logger.error(f"Error setting threshold: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/config', methods=['GET'])
+def get_config() -> Tuple[Response, int]:
+    """Get the current configuration settings.
+    
+    Returns:
+        Tuple[Response, int]: A tuple containing:
+            - JSON response with configuration information
+            - HTTP status code
+    """
+    try:
+        config = get_config_summary()
+        return jsonify({'success': True, 'config': config}), 200
+    except Exception as e:
+        logger.error(f"Error getting configuration: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/analytics', methods=['GET'])
+def analytics() -> Tuple[Response, int]:
+    """Get real-time analytics metrics.
+    
+    Returns:
+        Tuple[Response, int]: A tuple containing:
+            - JSON response with analytics metrics
+            - HTTP status code
+    """
+    try:
+        # Get detailed metrics with derived values
+        metrics = get_metrics_summary()
+        return jsonify({'success': True, 'metrics': metrics}), 200
+    except Exception as e:
+        logger.error(f"Error retrieving analytics: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Register cleanup handlers
 atexit.register(cleanup_streaming)

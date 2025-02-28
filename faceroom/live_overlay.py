@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from faceroom.camera import capture_frame
 from faceroom.face_recognition_module import detect_faces
+from faceroom.analytics import increment_metric
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -88,6 +89,10 @@ def process_frame_and_overlay(
         # Detect faces on downscaled frame
         face_locations_small, _ = detect_faces(rgb_small_frame, model=detection_model)
         
+        # Track faces detected
+        if face_locations_small:
+            increment_metric("faces_detected", len(face_locations_small))
+        
         # Scale face locations back to original size if needed
         if scale_factor < 1:
             face_locations = [
@@ -113,6 +118,7 @@ def process_frame_and_overlay(
         
     except Exception as e:
         logger.error(f"Error processing frame: {str(e)}")
+        increment_metric("detection_errors")
         return None
 
 def draw_overlays(

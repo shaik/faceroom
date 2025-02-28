@@ -35,7 +35,7 @@ def test_dashboard_route(client):
     assert 'Real-time face detection' in content
     assert 'Face recognition configuration' in content
     assert 'User enrollment' in content
-    assert 'System statistics' in content
+    assert 'System analytics' in content
 
 def test_index_route(client):
     """Test the index route redirects to dashboard."""

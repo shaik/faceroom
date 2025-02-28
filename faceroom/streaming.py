@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from faceroom.live_overlay import process_frame_and_overlay
 from faceroom.camera import cleanup as cleanup_cameras
+from faceroom.analytics import increment_metric
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -91,9 +92,14 @@ def generate_frames(
                 
                 # Capture and process frame
                 frame = process_frame_and_overlay(device_id)
+                
+                # Track frames processed
+                increment_metric("frames_processed")
+                
                 if frame is None:
                     logger.warning("Failed to capture frame, yielding error frame...")
                     frame = create_error_frame()
+                    increment_metric("detection_errors")
                 
                 # Encode frame as JPEG
                 success, jpeg_data = cv2.imencode(
@@ -113,6 +119,7 @@ def generate_frames(
                     
                     if not success:
                         logger.error("Failed to encode error frame, skipping...")
+                        increment_metric("detection_errors")
                         continue
                 
                 # Format as MJPEG frame
@@ -128,6 +135,8 @@ def generate_frames(
                     
             except Exception as e:
                 logger.error(f"Error in frame generation: {str(e)}")
+                increment_metric("detection_errors")
+                
                 try:
                     # Try to yield an error frame
                     frame = create_error_frame(message="Internal Error")
