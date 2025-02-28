@@ -43,3 +43,4 @@ htmlcov/
 # Project specific
 *.log
 static/uploads/
+projectFiles.txt
