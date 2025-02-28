@@ -53,6 +53,7 @@ def _get_camera(device_id: int) -> Optional[cv2.VideoCapture]:
             cap = cv2.VideoCapture(device_id)
             if not cap.isOpened():
                 logger.error(f"Failed to open camera (device_id: {device_id})")
+                cap.release()  # Release failed camera
                 return None
             
             # Configure camera for better performance
@@ -64,6 +65,8 @@ def _get_camera(device_id: int) -> Optional[cv2.VideoCapture]:
             
         except Exception as e:
             logger.error(f"Error creating camera: {str(e)}")
+            if 'cap' in locals():
+                cap.release()  # Release camera on error
             return None
 
 def capture_frame(device_id: int = 0) -> Optional[Tuple[bool, np.ndarray]]:
@@ -95,10 +98,13 @@ def capture_frame(device_id: int = 0) -> Optional[Tuple[bool, np.ndarray]]:
         
         if not ret:
             logger.error(f"Failed to capture frame from camera (device_id: {device_id})")
+            with _locks[device_id]:
+                if device_id in _cameras:
+                    _cameras[device_id].release()
+                    del _cameras[device_id]
             return None
             
         return ret, frame
-        
     except Exception as e:
         logger.error(f"Error capturing frame: {str(e)}")
         return None
