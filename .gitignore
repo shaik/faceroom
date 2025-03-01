@@ -44,3 +44,4 @@ htmlcov/
 *.log
 static/uploads/
 projectFiles.txt
+data/enrolled_faces.json
