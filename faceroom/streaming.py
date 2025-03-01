@@ -84,6 +84,7 @@ def generate_frames(
     stream_id = id(time.time())
     with _stream_lock:
         _active_streams.add(stream_id)
+        increment_metric("streaming_connections", 1)
     
     try:
         while stream_id in _active_streams:
@@ -94,12 +95,14 @@ def generate_frames(
                 frame = process_frame_and_overlay(device_id)
                 
                 # Track frames processed
-                increment_metric("frames_processed")
+                increment_metric("frames_processed", 1)
+                increment_metric("streaming_frames", 1)
                 
                 if frame is None:
                     logger.warning("Failed to capture frame, yielding error frame...")
                     frame = create_error_frame()
-                    increment_metric("detection_errors")
+                    increment_metric("detection_errors", 1)
+                    increment_metric("streaming_errors", 1)
                 
                 # Encode frame as JPEG
                 success, jpeg_data = cv2.imencode(
@@ -119,7 +122,8 @@ def generate_frames(
                     
                     if not success:
                         logger.error("Failed to encode error frame, skipping...")
-                        increment_metric("detection_errors")
+                        increment_metric("detection_errors", 1)
+                        increment_metric("streaming_errors", 1)
                         continue
                 
                 # Format as MJPEG frame
@@ -135,7 +139,8 @@ def generate_frames(
                     
             except Exception as e:
                 logger.error(f"Error in frame generation: {str(e)}")
-                increment_metric("detection_errors")
+                increment_metric("detection_errors", 1)
+                increment_metric("streaming_errors", 1)
                 
                 try:
                     # Try to yield an error frame
@@ -159,6 +164,7 @@ def generate_frames(
         with _stream_lock:
             try:
                 _active_streams.remove(stream_id)
+                increment_metric("streaming_disconnects", 1)
             except KeyError:
                 # Stream might have been removed by cleanup()
                 pass

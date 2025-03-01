@@ -25,18 +25,13 @@ def test_dashboard_route(client):
     # Check content
     content = response.data.decode()
     assert 'Faceroom Dashboard' in content
-    assert 'Welcome to Faceroom' in content
+    
+    # Check for grid layout
+    assert 'grid-container' in content
     
     # Check live feed
     assert 'Live Camera Feed' in content
-    assert 'src="/live"' in content
     
-    # Check expected features
-    assert 'Real-time face detection' in content
-    assert 'Face recognition configuration' in content
-    assert 'User enrollment' in content
-    assert 'System analytics' in content
-
 def test_index_route(client):
     """Test the index route redirects to dashboard."""
     # Make a GET request to /

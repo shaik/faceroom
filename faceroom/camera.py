@@ -21,6 +21,16 @@ os.environ['OPENCV_AVFOUNDATION_SKIP_AUTH'] = '1'
 # Global camera cache and locks
 _cameras: Dict[int, cv2.VideoCapture] = {}
 _locks: Dict[int, Lock] = {}
+cap: Optional[cv2.VideoCapture] = None
+
+def initialize_camera():
+    global cap
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        logger.error("Could not open video device")
+        cap = None
+    else:
+        logger.info("Camera initialized successfully")
 
 def _get_camera(device_id: int) -> Optional[cv2.VideoCapture]:
     """Get or create a camera instance.
@@ -65,8 +75,10 @@ def _get_camera(device_id: int) -> Optional[cv2.VideoCapture]:
             
         except Exception as e:
             logger.error(f"Error creating camera: {str(e)}")
-            if 'cap' in locals():
-                cap.release()  # Release camera on error
+            # Ensure cap is defined before using it
+            cap_var = locals().get('cap')
+            if cap_var is not None:
+                cap_var.release()  # Release camera on error
             return None
 
 def capture_frame(device_id: int = 0) -> Optional[Tuple[bool, np.ndarray]]:
@@ -88,6 +100,7 @@ def capture_frame(device_id: int = 0) -> Optional[Tuple[bool, np.ndarray]]:
         None: Exceptions are caught and logged
     """
     try:
+        initialize_camera()
         # Get camera instance
         cap = _get_camera(device_id)
         if cap is None:

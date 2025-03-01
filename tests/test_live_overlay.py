@@ -95,8 +95,8 @@ def test_draw_overlays_no_labels():
     """Test drawing overlays without labels."""
     frame = np.zeros((FRAME_HEIGHT, FRAME_WIDTH, 3), dtype=np.uint8)
     
-    # Draw overlays without labels
-    result = draw_overlays(frame, MOCK_FACE_LOCATIONS, draw_labels=False)
+    # Draw overlays without labels (passing None for face_labels)
+    result = draw_overlays(frame, MOCK_FACE_LOCATIONS, face_labels=None)
     
     # Verify result
     assert isinstance(result, np.ndarray)

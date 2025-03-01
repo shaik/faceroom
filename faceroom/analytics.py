@@ -22,27 +22,40 @@ METRICS: Dict[str, int] = {
     "detection_errors": 0,
     "recognition_matches": 0,
     "enrollment_count": 0,
-    "enrollment_errors": 0
+    "enrollment_errors": 0,
+    "streaming_frames": 0,
+    "streaming_errors": 0,
+    "streaming_connections": 0
 }
 
 
-def increment_metric(metric_name: str, count: int = 1) -> None:
-    """Increment a specific metric counter.
-    
-    Args:
-        metric_name (str): Name of the metric to increment
-        count (int, optional): Amount to increment by. Defaults to 1.
-    """
-    if not metric_name or not isinstance(count, int):
-        logger.warning(f"Invalid metric update: {metric_name=}, {count=}")
+class Metrics:
+    def __init__(self):
+        self._metrics = METRICS
+
+    def __setitem__(self, key: str, value: int) -> None:
+        if not isinstance(value, int):
+            raise ValueError(f"Expected an integer value for metric '{key}', got {type(value).__name__} instead.")
+        with _metrics_lock:
+            if key in self._metrics:
+                self._metrics[key] = int(value)
+                logger.debug(f"Updated metric {key} to {value}")
+            else:
+                logger.warning(f"Attempted to update unknown metric: {key}")
+
+
+def increment_metric(name: str, value: int) -> None:
+    """Increment the specified metric by the given value."""
+    if not name or not isinstance(value, int):
+        logger.warning(f"Invalid metric update: {name=}, {value=}")
         return
         
     with _metrics_lock:
-        if metric_name in METRICS:
-            METRICS[metric_name] += count
-            logger.debug(f"Incremented metric {metric_name} by {count}")
+        if name in METRICS:
+            METRICS[name] += int(value)
+            logger.debug(f"Incremented metric {name} by {value}")
         else:
-            logger.warning(f"Attempted to increment unknown metric: {metric_name}")
+            logger.warning(f"Attempted to increment unknown metric: {name}")
 
 
 def get_metrics() -> Dict[str, Any]:
@@ -78,14 +91,18 @@ def get_metrics_summary() -> Dict[str, Any]:
         
         # Add derived metrics
         if metrics["frames_processed"] > 0:
-            metrics["faces_per_frame"] = round(
-                metrics["faces_detected"] / metrics["frames_processed"], 4
-            )
-            metrics["error_rate"] = round(
-                metrics["detection_errors"] / metrics["frames_processed"], 4
-            )
+            # Calculate faces per frame and convert to int for type safety
+            metrics["faces_per_frame"] = int(round(
+                metrics["faces_detected"] / metrics["frames_processed"], 0
+            ))
+            # Calculate error rate and convert to int for type safety
+            metrics["error_rate"] = int(round(
+                metrics["detection_errors"] / metrics["frames_processed"], 0
+            ))
         else:
             metrics["faces_per_frame"] = 0
             metrics["error_rate"] = 0
             
         return metrics
+
+metrics = Metrics()

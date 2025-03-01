@@ -5,13 +5,18 @@ including setting the recognition threshold and getting the configuration.
 """
 
 import json
+from typing import Generator, Any, Dict, Union, cast
+
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
+
 from faceroom.app import app
 from faceroom.config import get_recognition_threshold, set_recognition_threshold
 
 
 @pytest.fixture
-def client():
+def client() -> Generator[FlaskClient, None, None]:
     """Create a test client for the Flask application."""
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -19,14 +24,14 @@ def client():
 
 
 @pytest.fixture
-def original_threshold():
+def original_threshold() -> Generator[float, None, None]:
     """Save and restore the original recognition threshold."""
     original = get_recognition_threshold()
     yield original
     set_recognition_threshold(original)
 
 
-def test_get_config(client):
+def test_get_config(client: FlaskClient) -> None:
     """Test that the /config endpoint returns the current configuration."""
     # Get the config
     response = client.get('/config')
@@ -44,7 +49,7 @@ def test_get_config(client):
     assert data['config']['recognition_threshold'] == get_recognition_threshold()
 
 
-def test_set_threshold_valid(client, original_threshold):
+def test_set_threshold_valid(client: FlaskClient, original_threshold: float) -> None:
     """Test that the /set-threshold endpoint updates the threshold with valid input."""
     # Set a new valid threshold
     new_threshold = 0.75
@@ -68,7 +73,7 @@ def test_set_threshold_valid(client, original_threshold):
     assert get_recognition_threshold() == new_threshold
 
 
-def test_set_threshold_invalid(client, original_threshold):
+def test_set_threshold_invalid(client: FlaskClient, original_threshold: float) -> None:
     """Test that the /set-threshold endpoint rejects invalid input."""
     # Try to set an invalid threshold
     invalid_threshold = 1.5  # Above maximum
@@ -92,7 +97,7 @@ def test_set_threshold_invalid(client, original_threshold):
     assert get_recognition_threshold() == original_threshold
 
 
-def test_set_threshold_missing_data(client, original_threshold):
+def test_set_threshold_missing_data(client: FlaskClient, original_threshold: float) -> None:
     """Test that the /set-threshold endpoint rejects requests with missing data."""
     # Send a request with missing threshold
     response = client.post(

@@ -79,7 +79,7 @@ def _check_face_quality(
     return True, ""
 
 
-def enroll_face(image: np.ndarray, user_id: str) -> bool:
+def enroll_face(image: Optional[np.ndarray], user_id: Any) -> bool:
     """Enroll a face in the recognition database.
     
     This function processes an input image to detect a face, validate its quality,
@@ -95,14 +95,16 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
     Raises:
         ValueError: If the input image is invalid or user_id is empty
     """
-    # Input validation
-    if image is None or not isinstance(image, np.ndarray) or image.size == 0:
-        logger.error("Invalid image provided for enrollment")
-        raise ValueError("Invalid image: must be a non-empty numpy array")
-    
-    if not user_id or not isinstance(user_id, str):
-        logger.error("Invalid user_id provided for enrollment")
-        raise ValueError("Invalid user_id: must be a non-empty string")
+    if image is None:
+        logger.error("No image provided for enrollment.")
+        return False
+    # Ensure image is a valid numpy array
+    if not isinstance(image, np.ndarray):
+        logger.error("Invalid image type provided. Expected a numpy array.")
+        return False
+    if not isinstance(user_id, str):
+        logger.error("Invalid user_id type provided. Expected a string.")
+        return False
     
     try:
         # Detect faces in the image
@@ -111,7 +113,8 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         # Check if any faces were detected
         if not face_locations:
             logger.warning(f"No faces detected for user_id: {user_id}")
-            increment_metric("enrollment_errors")
+            increment_metric("enrollment_attempts", 1)
+            increment_metric("enrollment_failures", 1)
             return False
         
         # Use the first face for simplicity
@@ -122,22 +125,37 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         quality_passed, reason = _check_face_quality(image, face_location)
         if not quality_passed:
             logger.warning(f"Face quality check failed for user_id {user_id}: {reason}")
-            increment_metric("enrollment_errors")
+            increment_metric("enrollment_attempts", 1)
+            increment_metric("enrollment_failures", 1)
             return False
         
         # Get the corresponding encoding
         if not face_encodings:
             logger.warning(f"No face encodings generated for user_id: {user_id}")
-            increment_metric("enrollment_errors")
+            increment_metric("enrollment_attempts", 1)
+            increment_metric("enrollment_failures", 1)
             return False
             
         face_encoding = face_encodings[0]
         
+        # Ensure face encoding is a numpy array with the correct dtype
+        if not isinstance(face_encoding, np.ndarray):
+            logger.warning(f"Converting face encoding to numpy array for user_id: {user_id}")
+            face_encoding = np.asarray(face_encoding, dtype=np.float64)
+        elif face_encoding.dtype != np.float64:
+            logger.warning(f"Converting face encoding dtype from {face_encoding.dtype} to float64 for user_id: {user_id}")
+            face_encoding = face_encoding.astype(np.float64)
+        
         # Store the encoding in the database
         with _db_lock:
+            if user_id in _enrolled_faces:
+                logger.warning(f"User {user_id} already enrolled, skipping")
+                increment_metric("enrollment_duplicate", 1)
+                return False
             _enrolled_faces[user_id] = face_encoding
             logger.info(f"Successfully enrolled face for user_id: {user_id}")
-            increment_metric("enrollment_count")
+            increment_metric("enrollment_success", 1)
+            increment_metric("enrollment_count", 1)
         
         # Save to persistent storage
         save_enrollment_database()
@@ -146,7 +164,8 @@ def enroll_face(image: np.ndarray, user_id: str) -> bool:
         
     except Exception as e:
         logger.error(f"Error enrolling face for user_id {user_id}: {str(e)}")
-        increment_metric("enrollment_errors")
+        increment_metric("enrollment_attempts", 1)
+        increment_metric("enrollment_failures", 1)
         return False
 
 
@@ -171,6 +190,17 @@ def list_enrolled_users() -> List[str]:
     """
     with _db_lock:
         return list(_enrolled_faces.keys())
+
+
+def get_all_enrollments() -> Dict[str, np.ndarray]:
+    """Get all enrolled user IDs and their face encodings.
+    
+    Returns:
+        Dict[str, np.ndarray]: Dictionary mapping user IDs to face encodings
+    """
+    with _db_lock:
+        # Return a copy to prevent external modification
+        return _enrolled_faces.copy()
 
 
 def remove_enrolled_face(user_id: str) -> bool:
@@ -203,7 +233,17 @@ def _encode_array(arr: np.ndarray) -> str:
     Returns:
         str: Base64 encoded string
     """
-    return base64.b64encode(arr.tobytes()).decode('ascii')
+    try:
+        # Ensure the array is a numpy array with float64 dtype
+        if not isinstance(arr, np.ndarray):
+            arr = np.asarray(arr, dtype=np.float64)
+        elif arr.dtype != np.float64:
+            arr = arr.astype(np.float64)
+            
+        return base64.b64encode(arr.tobytes()).decode('ascii')
+    except Exception as e:
+        logger.error(f"Error encoding array: {str(e)}")
+        raise ValueError(f"Failed to encode array: {str(e)}")
 
 
 def _decode_array(encoded: str) -> np.ndarray:
@@ -215,9 +255,14 @@ def _decode_array(encoded: str) -> np.ndarray:
     Returns:
         np.ndarray: Decoded numpy array
     """
-    decoded = base64.b64decode(encoded)
-    # Face encodings from face_recognition are 128-dimensional float64 arrays
-    return np.frombuffer(decoded, dtype=np.float64)
+    try:
+        decoded = base64.b64decode(encoded)
+        # Face encodings from face_recognition are 128-dimensional float64 arrays
+        return np.frombuffer(decoded, dtype=np.float64)
+    except Exception as e:
+        logger.error(f"Error decoding array: {str(e)}")
+        # Return an empty array rather than raising an exception
+        return np.array([], dtype=np.float64)
 
 
 def save_enrollment_database(file_path: str = DEFAULT_DB_PATH) -> bool:
@@ -237,11 +282,21 @@ def save_enrollment_database(file_path: str = DEFAULT_DB_PATH) -> bool:
         serializable_db = {}
         with _db_lock:
             for user_id, encoding in _enrolled_faces.items():
-                serializable_db[user_id] = {
-                    'encoding': _encode_array(encoding),
-                    'shape': encoding.shape,
-                    'dtype': str(encoding.dtype)
-                }
+                try:
+                    # Ensure encoding is a valid numpy array
+                    if not isinstance(encoding, np.ndarray):
+                        logger.warning(f"Converting non-numpy encoding for user {user_id}")
+                        encoding = np.asarray(encoding, dtype=np.float64)
+                    
+                    serializable_db[user_id] = {
+                        'encoding': _encode_array(encoding),
+                        'shape': encoding.shape,
+                        'dtype': str(encoding.dtype)
+                    }
+                except Exception as e:
+                    logger.error(f"Error serializing encoding for user {user_id}: {str(e)}")
+                    # Skip this user rather than failing the entire save
+                    continue
         
         # Write to file
         with open(file_path, 'w') as f:
@@ -273,12 +328,31 @@ def load_enrollment_database(file_path: str = DEFAULT_DB_PATH) -> bool:
         with open(file_path, 'r') as f:
             serialized_db = json.load(f)
         
+        if not serialized_db:
+            logger.warning(f"Empty enrollment database at {file_path}")
+            return True  # Not an error, just empty
+        
         # Convert serialized data back to numpy arrays
         with _db_lock:
             _enrolled_faces.clear()
             for user_id, data in serialized_db.items():
-                encoding = _decode_array(data['encoding'])
-                _enrolled_faces[user_id] = encoding
+                try:
+                    if not isinstance(data, dict) or 'encoding' not in data:
+                        logger.warning(f"Invalid data format for user {user_id}, skipping")
+                        continue
+                        
+                    encoding = _decode_array(data['encoding'])
+                    
+                    # Validate the encoding
+                    if encoding.size == 0:
+                        logger.warning(f"Empty encoding for user {user_id}, skipping")
+                        continue
+                        
+                    _enrolled_faces[user_id] = encoding
+                except Exception as e:
+                    logger.error(f"Error loading encoding for user {user_id}: {str(e)}")
+                    # Skip this user rather than failing the entire load
+                    continue
                 
         logger.info(f"Loaded enrollment database from {file_path} with {len(_enrolled_faces)} entries")
         return True

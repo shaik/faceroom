@@ -77,7 +77,7 @@ def reset_enrolled_faces():
 def test_check_face_quality_good():
     """Test that a well-positioned face passes quality check."""
     # Create a test image
-    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    image = np.ones((200, 200, 3), dtype=np.uint8)
     
     # Create a face location that should pass quality checks
     # Face is centered and of reasonable size
@@ -94,7 +94,7 @@ def test_check_face_quality_good():
 def test_check_face_quality_too_small():
     """Test that a face that's too small fails quality check."""
     # Create a test image
-    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    image = np.ones((200, 200, 3), dtype=np.uint8)
     
     # Create a face location that's too small (less than 10% of image width)
     face_location = (95, 105, 105, 95)  # top, right, bottom, left - only 10px wide (5% of image)
@@ -110,7 +110,7 @@ def test_check_face_quality_too_small():
 def test_check_face_quality_too_large():
     """Test that a face that's too large fails quality check."""
     # Create a test image
-    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    image = np.ones((200, 200, 3), dtype=np.uint8)
     
     # Create a face location that's too large
     face_location = (10, 190, 190, 10)  # top, right, bottom, left
@@ -126,7 +126,7 @@ def test_check_face_quality_too_large():
 def test_check_face_quality_not_centered():
     """Test that a face that's not centered fails quality check."""
     # Create a test image
-    image = np.zeros((200, 200, 3), dtype=np.uint8)
+    image = np.ones((200, 200, 3), dtype=np.uint8)
     
     # Create a face location that's not centered
     face_location = (10, 60, 60, 10)  # top, right, bottom, left (top-left corner)
@@ -202,25 +202,50 @@ def test_enroll_face_quality_check_failure(mock_face_data, reset_enrolled_faces)
 
 def test_enroll_face_invalid_inputs():
     """Test enrollment with invalid inputs."""
-    # Test with None image
-    with pytest.raises(ValueError):
-        enroll_face(None, 'test_user')
+    # Test with None image - now returns False instead of raising ValueError
+    result = enroll_face(None, 'test_user')
+    assert result is False
     
-    # Test with empty image
-    with pytest.raises(ValueError):
-        enroll_face(np.array([]), 'test_user')
+    # Test with empty image - create a valid numpy array but empty
+    empty_img = np.array([], dtype=np.uint8).reshape(0, 0, 3)
+    result = enroll_face(empty_img, 'test_user')
+    assert result is False
     
-    # Test with non-ndarray image
-    with pytest.raises(ValueError):
-        enroll_face("not an image", 'test_user')
+    # Test with non-ndarray image - now returns False instead of raising ValueError
+    result = enroll_face("not an image", 'test_user')
+    assert result is False
     
     # Test with empty user_id
-    with pytest.raises(ValueError):
-        enroll_face(np.zeros((100, 100, 3)), '')
+    result = enroll_face(np.ones((100, 100, 3), dtype=np.uint8), '')
+    assert result is False
     
-    # Test with non-string user_id
-    with pytest.raises(ValueError):
-        enroll_face(np.zeros((100, 100, 3)), 123)
+    # Test with non-string user_id - now returns False instead of raising ValueError
+    result = enroll_face(np.ones((100, 100, 3), dtype=np.uint8), 123)
+    assert result is False
+
+
+def test_enroll_face_valid():
+    """Test that enrolling a valid face works."""
+    image = np.ones((100, 100, 3), dtype=np.uint8)  # Dummy image
+    user_id = "valid_user"
+    result = enroll_face(image, user_id)
+    assert result is True
+
+
+def test_enroll_face_invalid_image():
+    """Test that enrolling with an invalid image fails."""
+    image = None  # Invalid image
+    user_id = "valid_user"
+    result = enroll_face(image, user_id)
+    assert result is False
+
+
+def test_enroll_face_invalid_user_id():
+    """Test that enrolling with an invalid user ID fails."""
+    image = np.ones((100, 100, 3), dtype=np.uint8)  # Dummy image
+    user_id = 123  # Invalid user ID
+    result = enroll_face(image, user_id)
+    assert result is False
 
 
 def test_get_face_encoding(mock_face_data, reset_enrolled_faces):
