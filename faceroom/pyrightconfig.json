@@ -1,0 +1,23 @@
+{
+    "include": ["faceroom"],
+    "exclude": ["**/__pycache__", "tests"],
+    "ignore": ["venv"],
+    "venvPath": ".",
+    "venv": "venv",
+    "typeCheckingMode": "strict",
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "reportUnknownMemberType": true,
+    "reportUnknownVariableType": true,
+    "reportUnknownArgumentType": true,
+    "reportUnknownLambdaType": true,
+    "reportUnknownParameterType": true,
+    "reportUntypedFunctionDecorator": true,
+    "reportUntypedClassDecorator": true,
+    "reportGeneralTypeIssues": true,
+    "reportInvalidTypeVarUse": true,
+    "reportUnnecessaryTypeIgnoreComment": true,
+    "reportUnusedImport": true,
+    "reportUnusedVariable": true
+  }
+  

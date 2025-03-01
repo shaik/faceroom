@@ -1,0 +1,22 @@
+{
+    "include": ["tests"],
+    "exclude": ["**/__pycache__"],
+    "ignore": ["venv"],
+    "venvPath": "..",
+    "venv": "venv",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "reportUnknownMemberType": false,
+    "reportUnknownVariableType": false,
+    "reportUnknownArgumentType": false,
+    "reportUnknownLambdaType": false,
+    "reportUnknownParameterType": false,
+    "reportUntypedFunctionDecorator": false,
+    "reportUntypedClassDecorator": false,
+    "reportGeneralTypeIssues": true,
+    "reportInvalidTypeVarUse": true,
+    "reportUnnecessaryTypeIgnoreComment": true,
+    "reportUnusedImport": true,
+    "reportUnusedVariable": true
+}
