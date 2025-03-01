@@ -49,6 +49,7 @@ from faceroom.enrollment import (
 )
 from faceroom.config import get_recognition_threshold, set_recognition_threshold, get_config_summary
 from faceroom.analytics import get_metrics, get_metrics_summary
+from faceroom.sound_player import set_cooldown, get_cooldown, cleanup as cleanup_sound_player
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -119,6 +120,41 @@ DASHBOARD_TEMPLATE = """
             width: 100%; /* Make sure the video scales to the container's width */
             border: 2px solid #ddd;
             border-radius: 5px;
+        }
+        
+        /* Log console styles */
+        .log-container {
+            margin-top: 15px;
+        }
+        
+        .log-console {
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            font-family: 'Courier New', monospace;
+            border-radius: 5px;
+            padding: 10px;
+            height: 150px;
+            overflow-y: auto;
+            font-size: 14px;
+            border: 1px solid #333;
+        }
+        
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px 5px;
+            border-left: 3px solid transparent;
+        }
+        
+        .log-info {
+            border-left-color: #4caf50;
+        }
+        
+        .log-error {
+            border-left-color: #f44336;
+        }
+        
+        .log-warning {
+            border-left-color: #ff9800;
         }
 
         .enrollment-container, .config-container, .analytics-container {
@@ -220,11 +256,21 @@ DASHBOARD_TEMPLATE = """
         }
     </style>
     <script>
+        // Function to log messages to the console
+        function logMessage(message, type = 'info') {
+            const logConsole = document.getElementById('log-console');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logConsole.appendChild(logEntry);
+            logConsole.scrollTop = logConsole.scrollHeight;
+        }
+        
         // Function to enroll a face using the current camera frame
         function enrollFace() {
             const userId = document.getElementById('user-id').value;
             if (!userId) {
-                alert('Please enter a user ID');
+                logMessage('Please enter a user ID', 'warning');
                 return;
             }
             
@@ -241,16 +287,16 @@ DASHBOARD_TEMPLATE = """
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert('Face enrolled successfully!');
+                    logMessage(`Face enrolled successfully for user: ${userId}`, 'info');
                     loadEnrolledUsers();
                     loadAnalytics(); // Refresh analytics after enrollment
                 } else {
-                    alert('Failed to enroll face: ' + data.error);
+                    logMessage('Failed to enroll face: ' + data.error, 'error');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('An error occurred while enrolling face');
+                logMessage('An error occurred while enrolling face', 'error');
             });
         }
         
@@ -264,8 +310,11 @@ DASHBOARD_TEMPLATE = """
                 
                 if (data.users.length === 0) {
                     usersList.innerHTML = '<p>No users enrolled yet.</p>';
+                    logMessage('No users enrolled in the system', 'info');
                     return;
                 }
+                
+                logMessage(`Loaded ${data.users.length} enrolled users`, 'info');
                 
                 data.users.forEach(userId => {
                     const userItem = document.createElement('div');
@@ -295,9 +344,7 @@ DASHBOARD_TEMPLATE = """
         
         // Function to remove an enrolled user
         function removeUser(userId) {
-            if (!confirm(`Are you sure you want to remove ${userId}?`)) {
-                return;
-            }
+            logMessage(`Removing user: ${userId}...`, 'warning');
             
             fetch('/remove-user', {
                 method: 'POST',
@@ -311,16 +358,16 @@ DASHBOARD_TEMPLATE = """
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(`User ${userId} removed successfully!`);
+                    logMessage(`User ${userId} removed successfully!`, 'info');
                     loadEnrolledUsers();
                     loadAnalytics(); // Refresh analytics after removal
                 } else {
-                    alert('Failed to remove user: ' + data.error);
+                    logMessage('Failed to remove user: ' + data.error, 'error');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('An error occurred while removing user');
+                logMessage('An error occurred while removing user', 'error');
             });
         }
         
@@ -340,12 +387,14 @@ DASHBOARD_TEMPLATE = """
             .then(response => response.json())
             .then(data => {
                 if (!data.success) {
-                    alert('Failed to update threshold: ' + data.error);
+                    logMessage('Failed to update threshold: ' + data.error, 'error');
+                } else {
+                    logMessage(`Recognition threshold updated to: ${threshold}`, 'info');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('An error occurred while updating threshold');
+                logMessage('An error occurred while updating threshold', 'error');
             });
         }
         
@@ -367,8 +416,14 @@ DASHBOARD_TEMPLATE = """
                     const now = new Date();
                     document.getElementById('last-updated').textContent = 
                         now.toLocaleTimeString();
+                    
+                    // Log analytics update
+                    logMessage('Analytics updated: ' + 
+                              `${data.metrics.frames_processed} frames, ` + 
+                              `${data.metrics.faces_detected} faces detected`, 'info');
                 } else {
                     console.error('Failed to load analytics:', data.error);
+                    logMessage('Failed to load analytics: ' + data.error, 'error');
                 }
             })
             .catch(error => {
@@ -400,6 +455,10 @@ DASHBOARD_TEMPLATE = """
         
         // Load enrolled users and configuration when the page loads
         window.onload = function() {
+            // Initialize log console
+            logMessage('Application initialized successfully', 'info');
+            logMessage('Camera feed started', 'info');
+            
             loadEnrolledUsers();
             setupAnalyticsRefresh();
             
@@ -446,6 +505,12 @@ DASHBOARD_TEMPLATE = """
             <div class="video-container">
                 <h2>Live Camera Feed</h2>
                 <img src="/live" alt="Live Camera Feed" class="video-feed">
+            </div>
+            <div class="log-container">
+                <h2>System Log</h2>
+                <div id="log-console" class="log-console">
+                    <div class="log-entry log-info">[System] Faceroom application started</div>
+                </div>
             </div>
         </div>
         
@@ -743,9 +808,78 @@ def analytics() -> Tuple[Response, int]:
         logger.error(f"Error retrieving analytics: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/get-sound-cooldown', methods=['GET'])
+def get_sound_cooldown() -> Tuple[Response, int]:
+    """Get the current cooldown period for sound playback.
+    
+    Returns:
+        Tuple[Response, int]: A tuple containing:
+            - JSON response with the current cooldown value
+            - HTTP status code
+    """
+    try:
+        cooldown = get_cooldown()
+        return jsonify({
+            'success': True,
+            'cooldown': cooldown
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting sound cooldown: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/set-sound-cooldown', methods=['POST'])
+def set_sound_cooldown() -> Tuple[Response, int]:
+    """Set the cooldown period for sound playback.
+    
+    This endpoint accepts a POST request with JSON data containing:
+    - cooldown: The new cooldown value in seconds (between 1 and 300)
+    
+    Returns:
+        Tuple[Response, int]: A tuple containing:
+            - JSON response with success/error information
+            - HTTP status code
+    """
+    try:
+        data = request.get_json()
+        if not data or 'cooldown' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing cooldown value'
+            }), 400
+            
+        cooldown = int(data['cooldown'])
+        
+        # Validate cooldown range (1 second to 5 minutes)
+        if cooldown < 1 or cooldown > 300:
+            return jsonify({
+                'success': False,
+                'error': 'Cooldown must be between 1 and 300 seconds'
+            }), 400
+            
+        # Set the new cooldown value
+        set_cooldown(cooldown)
+        
+        return jsonify({
+            'success': True,
+            'cooldown': cooldown
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error setting sound cooldown: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 # Register cleanup handlers
 atexit.register(cleanup_streaming)
 atexit.register(save_enrollment_database)
+atexit.register(cleanup_sound_player)
 
 # If this module is run directly, start the server
 if __name__ == "__main__":

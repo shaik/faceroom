@@ -13,6 +13,7 @@ from faceroom.camera import capture_frame
 from faceroom.face_recognition_module import detect_faces, compare_faces, face_distance
 from faceroom.enrollment import get_all_enrollments
 from faceroom.analytics import increment_metric
+from faceroom.sound_player import play_sound_for_user, mark_user_seen
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -114,6 +115,15 @@ def process_frame_and_overlay(
         face_labels = []
         if face_encodings and draw_labels:
             face_labels = match_faces_with_enrollments(face_encodings)
+            
+            # Play sounds for recognized faces
+            for label in face_labels:
+                if label != UNKNOWN_LABEL:
+                    # Try to play sound for this user
+                    play_sound_for_user(label)
+                else:
+                    # Just mark unknown faces as seen without playing sound
+                    mark_user_seen(label)
         
         # Draw bounding boxes and labels on original frame
         annotated_frame = draw_overlays(
@@ -133,6 +143,9 @@ def process_frame_and_overlay(
 
 def match_faces_with_enrollments(face_encodings: List[np.ndarray]) -> List[str]:
     """Match detected face encodings with enrolled faces.
+    
+    This function will also track recognized faces for sound playback purposes.
+    Sounds will be played when a face is recognized after the cooldown period.
     
     Args:
         face_encodings (List[np.ndarray]): List of face encodings to match
